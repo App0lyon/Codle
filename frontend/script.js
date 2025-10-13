@@ -413,9 +413,7 @@
     try {
       // Try to GET from DB
       const problem = await fetchJSON(`${API_BASE}/problems/${date}`);
-      console.log("problem");
       populateProblem(problem);
-      console.log("populate");
       renderHints(null); // No hints on GET route
       setStatus(`Loaded problem for ${date}.`);
       return;
