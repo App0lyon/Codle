@@ -8,7 +8,8 @@
 (() => {
   const $ = (sel) => document.querySelector(sel);
 
-  const API_BASE = localStorage.getItem("CODLE_API") || (window.CODLE_API_BASE || "http://localhost:8000");
+  // const API_BASE = localStorage.getItem("CODLE_API") || (window.CODLE_API_BASE || "http://localhost:8000");
+  const API_BASE = "http://54.37.159.102:8000";
 
   // --- Time helpers (Europe/Paris) ---
   function parisTodayISO() {
@@ -412,7 +413,9 @@
     try {
       // Try to GET from DB
       const problem = await fetchJSON(`${API_BASE}/problems/${date}`);
+      console.log("problem");
       populateProblem(problem);
+      console.log("populate");
       renderHints(null); // No hints on GET route
       setStatus(`Loaded problem for ${date}.`);
       return;
