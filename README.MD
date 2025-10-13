@@ -1,8 +1,11 @@
-# from project root
+# From project root
 docker build -t codle-ollama -f backend/ollama-backend/Dockerfile .
 docker run -d --name codle-ollama -p 11434:11434 codle-ollama
 
 cd backend/
+python -m venv venv
+venv\Scripts\activate
+pip install --upgrade pip
 pip install -r requirements.txt
 
 # Optional: point backend at the containerized Ollama
