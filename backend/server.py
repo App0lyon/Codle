@@ -131,25 +131,71 @@ class GenerateResponse(BaseModel):
 
 JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+def _escape_json_string(s: str) -> str:
+    # Escape backslashes, quotes, and newlines to be valid inside JSON strings
+    s = s.replace("\\", "\\\\")
+    s = s.replace('"', '\\"')
+    s = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
+    return s
 
 def _extract_json(text: str) -> Any:
-    """Try to extract JSON payload from model output.
-    Accepts fenced code blocks or raw JSON. Raises ValueError if invalid.
+    """Extract and robustly parse JSON payload from model output.
+
+    Accepts fenced JSON code blocks or raw JSON. Attempts to repair common
+    model mistakes: comments, trailing commas, smart quotes, and unescaped
+    newlines inside the 'starter_code' field.
     """
+    # 1) Prefer a ```json ... ``` fenced block if present
     match = JSON_BLOCK.search(text)
     candidate = match.group(1) if match else text
-    # Remove stray markdown headers or leading text
     candidate = candidate.strip()
-    # Some models append trailing commentary; try to locate the first and last braces/brackets
-    first = min((i for i in [candidate.find("{"), candidate.find("[") if candidate.find("[") != -1 else 10**9] if i != -1), default=-1)
-    last = max(candidate.rfind("}"), candidate.rfind("]"))
-    if first != -1 and last != -1:
-        candidate = candidate[first:last+1]
-    try:
-        return json.loads(candidate)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Could not parse JSON from model output: {e}")
 
+    # 2) Keep only from the first '{' or '[' through the last '}' or ']'
+    first_brace = candidate.find("{")
+    first_bracket = candidate.find("[")
+    first_positions = [p for p in (first_brace, first_bracket) if p != -1]
+    first = min(first_positions) if first_positions else -1
+    last = max(candidate.rfind("}"), candidate.rfind("]"))
+    if first != -1 and last != -1 and last >= first:
+        candidate = candidate[first:last+1]
+
+    # 3) Lightweight repairs before JSON parsing
+    cleaned = candidate
+
+    # 3a) Normalize smart quotes
+    cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
+
+    # 3b) Strip JS-style comments
+    cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)              # block comments
+    cleaned = re.sub(r"^\s*//.*$", "", cleaned, flags=re.MULTILINE)  # line comments
+
+    # 3c) Remove trailing commas before } or ]
+    cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
+
+    # 3d) Ensure starter_code is a valid JSON string (escape newlines/quotes)
+    def fix_starter_code(m: re.Match) -> str:
+        prefix = m.group(1)  # includes the leading "starter_code": "
+        body   = m.group(2)  # raw (possibly multi-line) code
+        return prefix + _escape_json_string(body) + '"'
+
+    cleaned = re.sub(
+        r'("starter_code"\s*:\s*")([\s\S]*?)"(?=\s*[,}\n])',
+        fix_starter_code,
+        cleaned,
+        flags=re.DOTALL,
+    )
+
+    # 4) Parse
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        # As a last resort, try once more after removing any remaining trailing commas
+        attempt = re.sub(r",(\s*[}\]])", r"\1", cleaned)
+        try:
+            return json.loads(attempt)
+        except json.JSONDecodeError:
+            # Surface the original for easier debugging
+            raise ValueError(f"Could not parse JSON from model output: {e}")
 
 def ollama_generate(prompt: str, model: Optional[str] = None) -> str:
     model = model or OLLAMA_MODEL
