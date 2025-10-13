@@ -132,7 +132,7 @@
     if (window.editor) {
       window.editor.setOption("mode", lang === "python" ? "python" :
         (lang === "javascript" ? "javascript" : (lang === "java" ? "text/x-java" : "text/x-c++src")));
-      window.editor.setValue(problem.starter_code || "");
+        window.editor.setValue((problem.starter_code || "").replace(/\\n/g, "\n"));
     } else {
       const ta = $("#codeEditor");
       if (ta) ta.value = problem.starter_code || "";
