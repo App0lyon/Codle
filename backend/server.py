@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Date
+    create_engine, Column, Integer, String, Date, text, inspect
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 
 # --- App setup ---------------------------------------------------------------
 
-app = FastAPI(title="Codle Backend", version="1.0.0")
+app = FastAPI(title="Codle Backend", version="1.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,13 +36,11 @@ engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_U
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
-Base.metadata.create_all(bind=engine)
-
 # --- Config -----------------------------------------------------------------
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "60"))
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "240"))
 
 DAILY_GEN_ENABLED = os.getenv("DAILY_GEN_ENABLED", "true").lower() == "true"
 DAILY_GEN_TIME = os.getenv("DAILY_GEN_TIME", "06:00")  # HH:MM (24h)
@@ -61,9 +59,25 @@ def get_db():
 
 scheduler: Optional[AsyncIOScheduler] = None
 
+def _ensure_schema():
+    """
+    Tiny auto-migration to add the 'hints' column if it doesn't exist yet.
+    Safe for SQLite/Postgres; ignored if already present.
+    """
+    with engine.begin() as conn:
+        insp = inspect(conn)
+        cols = {c["name"] for c in insp.get_columns("problems")} if insp.has_table("problems") else set()
+        if "problems" not in insp.get_table_names():
+            Base.metadata.create_all(bind=engine)
+            return
+        if "hints" not in cols:
+            # Store JSON-encoded array of strings
+            conn.execute(text("ALTER TABLE problems ADD COLUMN hints TEXT NOT NULL DEFAULT '[]'"))
+
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+    _ensure_schema()
 
     global scheduler
     if DAILY_GEN_ENABLED:
@@ -110,6 +124,7 @@ class ProblemPayload(BaseModel):
     starter_code: str
     language: str = "python"
     difficulty: str
+    hints: List[str] = []
 
 class Problem(Base):
     __tablename__ = "problems"
@@ -120,6 +135,8 @@ class Problem(Base):
     starter_code = Column(String, nullable=False)
     language = Column(String, nullable=False, default="python")
     difficulty = Column(String, nullable=False)
+    # NEW: store hints JSON as TEXT
+    hints = Column(String, nullable=False, default="[]")
 
 
 class GenerateResponse(BaseModel):
@@ -245,9 +262,9 @@ def ensure_problem_for_date(target_date: dt.date, db: Session) -> Optional[Probl
 
     # 1) Problem
     problem_data = agent.create_problem(difficulty)
-    # 2) Hints (generated for API response; not stored yet unless you want to extend schema)
-    _ = agent.create_hints(problem_data["title"], problem_data["description"])
-    # 3) Testsuite (same note as above)
+    # 2) Hints (now stored)
+    hints = agent.create_hints(problem_data["title"], problem_data["description"])
+    # 3) Testsuite (generated today but not stored)
     _ = agent.create_testsuite(problem_data["title"], problem_data["description"])
 
     row = Problem(
@@ -257,6 +274,7 @@ def ensure_problem_for_date(target_date: dt.date, db: Session) -> Optional[Probl
         starter_code=problem_data["starter_code"],
         language=problem_data.get("language", "python"),
         difficulty=difficulty,
+        hints=json.dumps(hints),
     )
     db.add(row)
     db.commit()
@@ -266,7 +284,9 @@ def ensure_problem_for_date(target_date: dt.date, db: Session) -> Optional[Probl
 # --- Agent prompts ----------------------------------------------------------
 
 PROBLEM_PROMPT = (
+    "Forget everything said before."
     "You are a coding interview problem designer. Create ONE LeetCode-style problem at the requested difficulty.\n"
+    "You must provided at least 2 examples."
     "Return ONLY a JSON code block (```json ... ```), with this exact schema and no extra keys:\n"
     "{\n"
     "  \"title\": string,\n"
@@ -362,7 +382,7 @@ def generate_problem(payload: GenerateRequest, db: Session = Depends(get_db)):
     # 3) Testsuite
     testsuite = agent.create_testsuite(problem_data["title"], problem_data["description"])
 
-    # Persist problem (without hints/tests) to DB
+    # Persist problem (now WITH hints) to DB
     problem_row = Problem(
         date=dt.date.today(),
         title=problem_data["title"],
@@ -370,6 +390,7 @@ def generate_problem(payload: GenerateRequest, db: Session = Depends(get_db)):
         starter_code=problem_data["starter_code"],
         language=problem_data.get("language", "python"),
         difficulty=difficulty,
+        hints=json.dumps(hints),
     )
     db.add(problem_row)
     db.commit()
@@ -378,14 +399,15 @@ def generate_problem(payload: GenerateRequest, db: Session = Depends(get_db)):
     return GenerateResponse(
         problem=ProblemPayload(
             id=problem_row.id,
-            date=problem_row.date.isoformat(),
+            date=problem_row.date.isoformat() if problem_row.date else None,
             title=problem_row.title,
             description=problem_row.description,
             starter_code=problem_row.starter_code,
             language=problem_row.language,
             difficulty=problem_row.difficulty,
+            hints=hints,
         ),
-        hints=hints,
+        hints=hints,  # kept for backward compatibility
         testsuite=testsuite,
     )
 
@@ -400,6 +422,10 @@ def get_problem(date: str, db: Session = Depends(get_db)):
     row = db.query(Problem).filter(Problem.date == target).first()
     if not row:
         raise HTTPException(status_code=404, detail="Problem not found")
+    try:
+        hints = json.loads(row.hints) if row.hints else []
+    except json.JSONDecodeError:
+        hints = []
     return ProblemPayload(
         id=row.id,
         date=row.date.isoformat() if row.date else None,
@@ -408,6 +434,7 @@ def get_problem(date: str, db: Session = Depends(get_db)):
         starter_code=row.starter_code,
         language=row.language,
         difficulty=row.difficulty,
+        hints=hints,
     )
 
 

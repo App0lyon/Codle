@@ -24,3 +24,6 @@ curl -X POST \
   http://localhost:8000/problems \
   -H "Content-Type: application/json" \
   -d '{"difficulty":"medium"}'
+
+
+curl -X GET http://localhost:8000/problems/2025-10-13
