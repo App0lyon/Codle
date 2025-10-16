@@ -15,13 +15,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from zoneinfo import ZoneInfo
-
 
 # --- App setup ---------------------------------------------------------------
 
-app = FastAPI(title="Codle Backend", version="1.1.0")
+app = FastAPI(title="Codle Backend", version="1.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,13 +37,15 @@ Base = declarative_base()
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "240"))
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "300"))
 
 DAILY_GEN_ENABLED = os.getenv("DAILY_GEN_ENABLED", "true").lower() == "true"
-DAILY_GEN_TIME = os.getenv("DAILY_GEN_TIME", "06:00")  # HH:MM (24h)
+DAILY_GEN_TIME = os.getenv("DAILY_GEN_TIME", "01:00")
 DAILY_GEN_TZ = os.getenv("DAILY_GEN_TZ", "Europe/Paris")
 DAILY_GEN_DIFFICULTY = os.getenv("DAILY_GEN_DIFFICULTY", "rotate")
 
+VERIFIER_MODEL = os.getenv("VERIFIER_MODEL", OLLAMA_MODEL)
+AUTO_APPLY_VERIFIER_FIXES = os.getenv("AUTO_APPLY_VERIFIER_FIXES", "true").lower() == "true"
 
 # --- DB dependency -----------------------------------------------------------
 
@@ -65,43 +64,27 @@ def _ensure_schema():
     Safe for SQLite/Postgres; ignored if already present.
     """
     with engine.begin() as conn:
-        insp = inspect(conn)
-        cols = {c["name"] for c in insp.get_columns("problems")} if insp.has_table("problems") else set()
-        if "problems" not in insp.get_table_names():
-            Base.metadata.create_all(bind=engine)
+        inspector = inspect(conn)
+        if "problems" not in inspector.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE problems (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date DATE NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    starter_code TEXT NOT NULL,
+                    language TEXT NOT NULL DEFAULT 'python',
+                    difficulty TEXT NOT NULL,
+                    hints TEXT NOT NULL DEFAULT '[]'
+                )
+            """))
             return
+
+        cols = {c["name"] for c in inspector.get_columns("problems")}
         if "hints" not in cols:
-            # Store JSON-encoded array of strings
             conn.execute(text("ALTER TABLE problems ADD COLUMN hints TEXT NOT NULL DEFAULT '[]'"))
 
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
-    _ensure_schema()
-
-    global scheduler
-    if DAILY_GEN_ENABLED:
-        tz = ZoneInfo(DAILY_GEN_TZ)
-        hour, minute = map(int, DAILY_GEN_TIME.split(":"))
-        scheduler = AsyncIOScheduler(timezone=tz)
-
-        def _job():
-            # Run inside a fresh db session
-            with SessionLocal() as db:
-                today = dt.datetime.now(tz).date()
-                ensure_problem_for_date(today, db)
-
-        # Run every day at the configured time
-        scheduler.add_job(_job, CronTrigger(hour=hour, minute=minute, timezone=tz), id="daily_problem")
-        scheduler.start()
-
-@app.on_event("shutdown")
-def on_shutdown():
-    global scheduler
-    if scheduler:
-        scheduler.shutdown(wait=False)
-
-# --- Schemas ----------------------------------------------------------------
+# --- Models / Schemas -------------------------------------------------------
 
 class HealthResponse(BaseModel):
     ok: bool
@@ -135,39 +118,27 @@ class Problem(Base):
     starter_code = Column(String, nullable=False)
     language = Column(String, nullable=False, default="python")
     difficulty = Column(String, nullable=False)
-    # NEW: store hints JSON as TEXT
     hints = Column(String, nullable=False, default="[]")
-
 
 class GenerateResponse(BaseModel):
     problem: ProblemPayload
     hints: List[str]
     testsuite: List[Dict[str, Any]]
+    review: Dict[str, Any] = Field(default_factory=dict)
 
 # --- Utilities --------------------------------------------------------------
 
 JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
-def _escape_json_string(s: str) -> str:
-    # Escape backslashes, quotes, and newlines to be valid inside JSON strings
-    s = s.replace("\\", "\\\\")
-    s = s.replace('"', '\\"')
-    s = s.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
-    return s
-
 def _extract_json(text: str) -> Any:
-    """Extract and robustly parse JSON payload from model output.
-
-    Accepts fenced JSON code blocks or raw JSON. Attempts to repair common
-    model mistakes: comments, trailing commas, smart quotes, and unescaped
-    newlines inside the 'starter_code' field.
     """
-    # 1) Prefer a ```json ... ``` fenced block if present
+    Be liberal in what you accept: pull out the first plausible JSON object/array,
+    normalize quotes, strip comments, and retry once without trailing commas.
+    """
     match = JSON_BLOCK.search(text)
     candidate = match.group(1) if match else text
     candidate = candidate.strip()
 
-    # 2) Keep only from the first '{' or '[' through the last '}' or ']'
     first_brace = candidate.find("{")
     first_bracket = candidate.find("[")
     first_positions = [p for p in (first_brace, first_bracket) if p != -1]
@@ -176,42 +147,20 @@ def _extract_json(text: str) -> Any:
     if first != -1 and last != -1 and last >= first:
         candidate = candidate[first:last+1]
 
-    # 3) Lightweight repairs before JSON parsing
     cleaned = candidate
 
-    # 3a) Normalize smart quotes
     cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
-
-    # 3b) Strip JS-style comments
-    cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)              # block comments
-    cleaned = re.sub(r"^\s*//.*$", "", cleaned, flags=re.MULTILINE)  # line comments
-
-    # 3c) Remove trailing commas before } or ]
+    cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)
+    cleaned = re.sub(r"^\s*//.*$", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
 
-    # 3d) Ensure starter_code is a valid JSON string (escape newlines/quotes)
-    def fix_starter_code(m: re.Match) -> str:
-        prefix = m.group(1)  # includes the leading "starter_code": "
-        body   = m.group(2)  # raw (possibly multi-line) code
-        return prefix + _escape_json_string(body) + '"'
-
-    cleaned = re.sub(
-        r'("starter_code"\s*:\s*")([\s\S]*?)"(?=\s*[,}\n])',
-        fix_starter_code,
-        cleaned,
-        flags=re.DOTALL,
-    )
-
-    # 4) Parse
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        # As a last resort, try once more after removing any remaining trailing commas
         attempt = re.sub(r",(\s*[}\]])", r"\1", cleaned)
         try:
             return json.loads(attempt)
         except json.JSONDecodeError:
-            # Surface the original for easier debugging
             raise ValueError(f"Could not parse JSON from model output: {e}")
 
 def ollama_generate(prompt: str, model: Optional[str] = None) -> str:
@@ -228,80 +177,47 @@ def ollama_generate(prompt: str, model: Optional[str] = None) -> str:
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"Ollama error {resp.status_code}: {resp.text}")
     data = resp.json()
-    # Ollama returns { response: "..." }
     return data.get("response", "").strip()
-
 
 def check_ollama(model: Optional[str] = None) -> Dict[str, str]:
     model = model or OLLAMA_MODEL
-    # Try a tiny generate to verify the model exists
     probe = ollama_generate("Respond with exactly the word: OK", model=model)
-    ok = "OK" in probe.upper()
-    if not ok:
-        raise HTTPException(status_code=502, detail=f"Unexpected response from Ollama model '{model}': {probe[:120]}")
+    if probe.strip() != "OK":
+        raise HTTPException(status_code=502, detail="Ollama did not respond correctly to probe")
     return {"model": model, "ollama": OLLAMA_HOST}
 
-def pick_difficulty_for_date(d: dt.date) -> str:
-    """Rotate medium -> hard -> extreme by date."""
-    if DAILY_GEN_DIFFICULTY in {"medium", "hard", "extreme"}:
-        return DAILY_GEN_DIFFICULTY
-    order = ["medium", "hard", "extreme"]
-    return order[d.toordinal() % 3]
-
-def ensure_problem_for_date(target_date: dt.date, db: Session) -> Optional[Problem]:
-    """If no problem exists for target_date, generate and persist one. Return the row."""
-    existing = db.query(Problem).filter(Problem.date == target_date).first()
-    if existing:
-        return existing
-
-    # Ensure model is up
-    check_ollama()
-
-    agent = LeetAgent()
-    difficulty = pick_difficulty_for_date(target_date)
-
-    # 1) Problem
-    problem_data = agent.create_problem(difficulty)
-    # 2) Hints (now stored)
-    hints = agent.create_hints(problem_data["title"], problem_data["description"])
-    # 3) Testsuite (generated today but not stored)
-    _ = agent.create_testsuite(problem_data["title"], problem_data["description"])
-
-    row = Problem(
-        date=target_date,
-        title=problem_data["title"],
-        description=problem_data["description"],
-        starter_code=problem_data["starter_code"],
-        language=problem_data.get("language", "python"),
-        difficulty=difficulty,
-        hints=json.dumps(hints),
-    )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
+def pick_difficulty_for_date(date: dt.date) -> str:
+    """
+    When DAILY_GEN_DIFFICULTY='rotate', rotate (Mon/Tue/Wed -> medium, Thu/Fri -> hard, Sat/Sun -> extreme)
+    else use the configured value (medium|hard|extreme).
+    """
+    configured = DAILY_GEN_DIFFICULTY.lower().strip()
+    if configured in {"medium", "hard", "extreme"}:
+        return configured
+    wd = date.weekday()
+    if wd <= 2:
+        return "medium"
+    if wd <= 4:
+        return "hard"
+    return "extreme"
 
 # --- Agent prompts ----------------------------------------------------------
 
 PROBLEM_PROMPT = (
-    "Forget everything said before."
     "You are a coding interview problem designer. Create ONE LeetCode-style problem at the requested difficulty.\n"
-    "You must provided at least 2 examples."
+    "You must provide at least 2 examples.\n"
     "Return ONLY a JSON code block (```json ... ```), with this exact schema and no extra keys:\n"
     "{\n"
-    "  \"title\": string,\n"
-    "  \"description\": string,\n"
-    "  \"starter_code\": string,\n"
-    "  \"language\": \"python\"\n"
+    '  "title": string,\n'
+    '  "description": string,  // markdown; MUST include at least two "Example" sections\n'
+    '  "starter_code": string, // valid Python 3 skeleton: def/ class signature and pass; no external libs\n'
+    '  "language": "python"\n'
     "}\n"
-    "Rules:\n"
-    "- No markdown outside the JSON block.\n"
-    "- No comments in the JSON.\n"
-    "- No trailing commas.\n"
-    "- The starter_code must be a valid Python 3 function or class skeleton (escape newlines as \\n).\n"
-    "- No external libraries; keep the signature practical; avoid trivial problems."
+    "Constraints:\n"
+    "- Novel problem (not plagiarized).\n"
+    "- starter_code must be valid Python 3 and compilable.\n"
+    "- Avoid randomness and I/O; function-style problems only."
 )
-
 
 HINTS_PROMPT = (
     "You are a helpful coding tutor. Based on the following problem, write EXACTLY 3 concise hints, from gentle to more direct.\n"
@@ -310,10 +226,34 @@ HINTS_PROMPT = (
 
 TESTSUITE_PROMPT = (
     "Design a robust unit test suite for the problem below.\n"
-    "Output ONLY JSON: an array of test cases. Each test case must be an object with keys: \n"
-    "  - \"input\": the function input (single value or array/obj as appropriate)\n"
-    "  - \"expected\": the expected output value.\n"
+    "Output ONLY JSON: an array of test cases. Each test case must be an object with keys:\n"
+    '  - "input": the function input (single value or array/obj as appropriate)\n'
+    '  - "expected": the expected output\n'
     "Cover edge cases and typical scenarios. The testsuite must be more than 10 tests."
+)
+
+REVIEW_PROMPT = (
+    "You are a rigorous code problem QA reviewer.\n"
+    "Given a proposed coding problem (title, description, starter_code, language, difficulty), its 3 hints, and a testsuite,\n"
+    "validate STRICTLY against these rules:\n"
+    "1) starter_code must be valid Python 3 (compilable skeleton function or class), with no external libraries.\n"
+    "2) description must contain at least two worked 'Example' sections.\n"
+    "3) hints must be EXACTLY 3 short strings.\n"
+    "4) testsuite must be an array of > 10 test cases; each has 'input' and 'expected'.\n"
+    "If something is wrong, propose the SMALLEST fixes possible.\n"
+    "Return ONLY a JSON object with fields:\n"
+    "{\n"
+    '  "ok": boolean,\n'
+    '  "issues": string[],\n'
+    '  "suggestions": {\n'
+    '     "title"?: string,\n'
+    '     "description"?: string,\n'
+    '     "starter_code"?: string,\n'
+    '     "hints"?: string[3],\n'
+    '     "testsuite"?: {"replace": boolean, "items": array}\n'
+    "  }\n"
+    "}\n"
+    "Rules: output must be valid JSON; keep suggestions minimal; do not invent new APIs."
 )
 
 # --- Agent orchestration ----------------------------------------------------
@@ -326,12 +266,9 @@ class LeetAgent:
         return f"Problem Title: {title}\n\nDescription (markdown):\n{description}\n"
 
     def create_problem(self, difficulty: str) -> Dict[str, Any]:
-        prompt = (
-            f"Difficulty: {difficulty}.\n\n" + PROBLEM_PROMPT
-        )
+        prompt = f"Difficulty: {difficulty}.\n\n" + PROBLEM_PROMPT
         raw = ollama_generate(prompt, model=self.model)
         data = _extract_json(raw)
-        # Sanity fill defaults
         data.setdefault("language", "python")
         if not all(k in data for k in ("title", "description", "starter_code")):
             raise HTTPException(status_code=502, detail="Model did not return the required fields for problem generation")
@@ -353,36 +290,167 @@ class LeetAgent:
             raise HTTPException(status_code=502, detail="Model did not return a valid testsuite array")
         return suite
 
+class VerifierAgent:
+    """Second agent that reviews and suggests minimal corrections."""
+    def __init__(self, model: Optional[str] = None):
+        self.model = model or VERIFIER_MODEL
+
+    @staticmethod
+    def _local_checks(problem_data: Dict[str, Any], hints: List[str], suite: List[Dict[str, Any]]) -> List[str]:
+        issues: List[str] = []
+        code = problem_data.get("starter_code", "")
+        try:
+            compiled = code.replace("\\n", "\n")
+            compile(compiled, "<starter_code>", "exec")
+        except Exception as e:
+            issues.append(f"starter_code does not compile: {type(e).__name__}: {e}")
+        desc = problem_data.get("description", "")
+        if len(re.findall(r"\bExample\b", desc, flags=re.IGNORECASE)) < 2:
+            issues.append("description appears to have fewer than 2 'Example' sections")
+        if not (isinstance(hints, list) and len(hints) == 3 and all(isinstance(h, str) for h in hints)):
+            issues.append("hints are not exactly 3 strings")
+        if not (isinstance(suite, list) and len(suite) > 10 and all(isinstance(t, dict) and "input" in t and "expected" in t for t in suite)):
+            issues.append("testsuite invalid or has <= 10 tests")
+        return issues
+
+    def review(self, problem_data: Dict[str, Any], hints: List[str], suite: List[Dict[str, Any]], difficulty: str) -> Dict[str, Any]:
+        local_issues = self._local_checks(problem_data, hints, suite)
+        payload = {
+            "title": problem_data.get("title"),
+            "description": problem_data.get("description"),
+            "starter_code": problem_data.get("starter_code"),
+            "language": problem_data.get("language", "python"),
+            "difficulty": difficulty,
+            "hints": hints,
+            "testsuite": suite,
+        }
+        prompt = "Input JSON:\n" + json.dumps(payload, ensure_ascii=False) + "\n\n" + REVIEW_PROMPT
+        raw = ollama_generate(prompt, model=self.model)
+        data = _extract_json(raw)
+        if not isinstance(data, dict) or "ok" not in data or "issues" not in data:
+            raise HTTPException(status_code=502, detail="Verifier did not return the required fields")
+        data.setdefault("issues", [])
+        if local_issues:
+            merged = []
+            seen = set()
+            for it in [*local_issues, *data["issues"]]:
+                if it not in seen:
+                    merged.append(it)
+                    seen.add(it)
+            data["issues"] = merged
+        data.setdefault("suggestions", {})
+        return data
+
+def _apply_suggestions(problem_data: Dict[str, Any], hints: List[str], suite: List[Dict[str, Any]], suggestions: Dict[str, Any]):
+    updated_problem = dict(problem_data)
+    updated_hints = list(hints)
+    updated_suite = list(suite)
+    if not isinstance(suggestions, dict):
+        return updated_problem, updated_hints, updated_suite
+    for k in ("title", "description", "starter_code"):
+        if k in suggestions and isinstance(suggestions[k], str) and suggestions[k].strip():
+            updated_problem[k] = suggestions[k]
+    if "hints" in suggestions and isinstance(suggestions["hints"], list) and len(suggestions["hints"]) == 3 and all(isinstance(h, str) for h in suggestions["hints"]):
+        updated_hints = suggestions["hints"]
+    if "testsuite" in suggestions and isinstance(suggestions["testsuite"], dict):
+        ts = suggestions["testsuite"]
+        if ts.get("replace") and isinstance(ts.get("items"), list):
+            updated_suite = ts["items"]
+    return updated_problem, updated_hints, updated_suite
+
+# --- Daily generation --------------------------------------------------------
+
+def ensure_problem_for_date(target_date: dt.date, db: Session) -> Optional[Problem]:
+    existing = db.query(Problem).filter(Problem.date == target_date).first()
+    if existing:
+        return existing
+
+    check_ollama()
+
+    agent = LeetAgent()
+    difficulty = pick_difficulty_for_date(target_date)
+
+    problem_data = agent.create_problem(difficulty)
+    hints = agent.create_hints(problem_data["title"], problem_data["description"])
+    testsuite = agent.create_testsuite(problem_data["title"], problem_data["description"])
+
+    verifier = VerifierAgent()
+    review = verifier.review(problem_data, hints, testsuite, difficulty)
+    if AUTO_APPLY_VERIFIER_FIXES and isinstance(review.get("suggestions"), dict):
+        problem_data, hints, testsuite = _apply_suggestions(problem_data, hints, testsuite, review["suggestions"])
+
+    row = Problem(
+        date=target_date,
+        title=problem_data["title"],
+        description=problem_data["description"],
+        starter_code=problem_data["starter_code"],
+        language=problem_data.get("language", "python"),
+        difficulty=difficulty,
+        hints=json.dumps(hints),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+def _schedule_daily():
+    global scheduler
+    if not DAILY_GEN_ENABLED:
+        return
+    if scheduler is None:
+        scheduler = AsyncIOScheduler(timezone=DAILY_GEN_TZ)
+        scheduler.start()
+
+    try:
+        hh, mm = map(int, DAILY_GEN_TIME.split(":"))
+        hh = max(0, min(23, hh))
+        mm = max(0, min(59, mm))
+    except Exception:
+        hh, mm = 6, 0
+
+    def job():
+        with SessionLocal() as db:
+            ensure_problem_for_date(dt.date.today(), db)
+
+    for job_ in scheduler.get_jobs():
+        job_.remove()
+
+    scheduler.add_job(job, "cron", hour=hh, minute=mm, id="daily-problem")
+
 # --- Routes -----------------------------------------------------------------
 
-@app.get("/health", response_model=HealthResponse)
-def healthcheck():
-    info = check_ollama()
-    return HealthResponse(ok=True, model=info["model"], ollama=info["ollama"]) 
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
+    _ensure_schema()
+    _schedule_daily()
 
+@app.get("/check-health", response_model=HealthResponse)
+def check_health():
+    try:
+        info = check_ollama()
+        return HealthResponse(ok=True, model=info["model"], ollama=info["ollama"])
+    except HTTPException as e:
+        raise e
 
 @app.post("/problems", response_model=GenerateResponse)
 def generate_problem(payload: GenerateRequest, db: Session = Depends(get_db)):
-    # Validate difficulty explicitly
     difficulty = payload.difficulty.lower()
     if difficulty not in {"medium", "hard", "extreme"}:
         raise HTTPException(status_code=400, detail="difficulty must be one of: medium, hard, extreme")
 
-    # Ensure model is up
     check_ollama()
-
     agent = LeetAgent()
 
-    # 1) Problem
     problem_data = agent.create_problem(difficulty)
-
-    # 2) Hints
     hints = agent.create_hints(problem_data["title"], problem_data["description"])
-
-    # 3) Testsuite
     testsuite = agent.create_testsuite(problem_data["title"], problem_data["description"])
 
-    # Persist problem (now WITH hints) to DB
+    verifier = VerifierAgent()
+    review = verifier.review(problem_data, hints, testsuite, difficulty)
+    if AUTO_APPLY_VERIFIER_FIXES and isinstance(review.get("suggestions"), dict):
+        problem_data, hints, testsuite = _apply_suggestions(problem_data, hints, testsuite, review["suggestions"])
+
     problem_row = Problem(
         date=dt.date.today(),
         title=problem_data["title"],
@@ -407,18 +475,18 @@ def generate_problem(payload: GenerateRequest, db: Session = Depends(get_db)):
             difficulty=problem_row.difficulty,
             hints=hints,
         ),
-        hints=hints,  # kept for backward compatibility
+        hints=hints,
         testsuite=testsuite,
+        review=review,
     )
 
-
 @app.get("/problems/{date}", response_model=ProblemPayload)
-def get_problem(date: str, db: Session = Depends(get_db)):
-    # Accept ISO date (YYYY-MM-DD) and convert to actual date for DB comparison
+def get_problem_by_date(date: str, db: Session = Depends(get_db)):
     try:
-        target = dt.date.fromisoformat(date)
+        target = dt.datetime.strptime(date, "%Y-%m-%d").date()
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        raise HTTPException(status_code=400, detail="Date must be YYYY-MM-DD")
+
     row = db.query(Problem).filter(Problem.date == target).first()
     if not row:
         raise HTTPException(status_code=404, detail="Problem not found")
@@ -436,8 +504,3 @@ def get_problem(date: str, db: Session = Depends(get_db)):
         difficulty=row.difficulty,
         hints=hints,
     )
-
-
-@app.get("/")
-def root():
-    return {"name": app.title, "version": app.version}

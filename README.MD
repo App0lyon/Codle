@@ -18,7 +18,7 @@ uvicorn server:app --reload --port 8000
 
 
 ---
-GET /health should respond with { ok: true, model, ollama }.
+GET /check-health should respond with { ok: true, model, ollama }.
 
 curl -X POST \
   http://localhost:8000/problems \
