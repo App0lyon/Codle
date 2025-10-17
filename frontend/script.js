@@ -9,7 +9,8 @@
   const $ = (sel) => document.querySelector(sel);
 
   // const API_BASE = localStorage.getItem("CODLE_API") || (window.CODLE_API_BASE || "http://localhost:8000");
-  const API_BASE = "http://54.37.159.102:8000";
+  // const API_BASE = "http://54.37.159.102:8000";
+  const API_BASE = "http://localhost:8000";
 
   // --- Time helpers (Europe/Paris) ---
   function parisTodayISO() {
@@ -32,7 +33,7 @@
 
   // --- Theme toggle (kept minimal) ---
   function initThemeToggle() {
-    const pref = localStorage.getItem("codle-theme") || "light";
+    const pref = localStorage.getItem("codle-theme") || "dark";
     document.documentElement.setAttribute("data-theme", pref);
     const btn = $("#themeToggle");
     if (!btn) return;
@@ -154,11 +155,11 @@
       const div = document.createElement("div");
       div.className = "hint-item";
       div.dataset.hintIndex = String(i);
-      div.hidden = i !== 0;
+      div.hidden = true;
       div.innerHTML = `<strong>Hint ${i+1}:</strong> ${h}`;
       container.appendChild(div);
     });
-    let idx = 0;
+    let idx = -1;
     function showNext() {
       const items = container.querySelectorAll(".hint-item");
       if (idx < items.length - 1) {
@@ -188,11 +189,6 @@
     // Tests controls
     const addBtn = $("#addTestBtn");
     if (addBtn) addBtn.addEventListener("click", () => addTestCase());
-
-    const prevBtn = $("#prevTestBtn");
-    const nextBtn = $("#nextTestBtn");
-    if (prevBtn) prevBtn.addEventListener("click", () => goToTest(currentTestIndex - 1));
-    if (nextBtn) nextBtn.addEventListener("click", () => goToTest(currentTestIndex + 1));
 
     // Keyboard: Ctrl/Cmd + Enter runs all
     window.addEventListener("keydown", (e) => {
@@ -414,7 +410,7 @@
       // Try to GET from DB
       const problem = await fetchJSON(`${API_BASE}/problems/${date}`);
       populateProblem(problem);
-      renderHints(null); // No hints on GET route
+      renderHints(problem.hints);
       setStatus(`Loaded problem for ${date}.`);
       return;
     } catch (e) {
@@ -460,3 +456,144 @@
     loadTodaysProblem();
   });
 })();
+
+document.addEventListener("DOMContentLoaded", () => {
+  initThemeToggle();
+  initEditor();
+  initUIButtons();
+  loadTodaysProblem();
+});
+
+// ====== User Menu ======
+(() => {
+  const btn = document.getElementById('userMenuBtn');
+  const menu = document.getElementById('userMenu');
+  if (!btn || !menu) return;
+
+  const elProfile  = document.getElementById('menuProfile');
+  const elSettings = document.getElementById('menuSettings');
+  const elAuth     = document.getElementById('menuAuth');
+
+  // Simple "auth" flag in localStorage for demo purposes
+  const AUTH_KEY = 'codle_isLoggedIn';
+  const isLoggedIn = () => localStorage.getItem(AUTH_KEY) === '1';
+  const setAuthLabel = () => { elAuth.textContent = isLoggedIn() ? 'Logout' : 'Login'; };
+  setAuthLabel();
+
+  const items = [elProfile, elSettings, elAuth].filter(Boolean);
+
+  const openMenu = () => {
+    menu.classList.add('open');
+    btn.setAttribute('aria-expanded', 'true');
+    // focus first item for keyboard users
+    items[0]?.focus();
+  };
+  const closeMenu = () => {
+    menu.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.focus();
+  };
+  const isOpen = () => menu.classList.contains('open');
+
+  // Toggle on click
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isOpen() ? closeMenu() : openMenu();
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!isOpen()) return;
+    if (!menu.contains(e.target) && !btn.contains(e.target)) closeMenu();
+  });
+
+  // Keyboard handling
+  document.addEventListener('keydown', (e) => {
+    if (!isOpen()) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return; }
+
+    // Arrow navigation & looping Tab
+    const currentIndex = items.indexOf(document.activeElement);
+    if (['ArrowDown', 'ArrowUp'].includes(e.key)) {
+      e.preventDefault();
+      let next = e.key === 'ArrowDown' ? currentIndex + 1 : currentIndex - 1;
+      if (next < 0) next = items.length - 1;
+      if (next >= items.length) next = 0;
+      items[next].focus();
+    } else if (e.key === 'Tab') {
+      // Keep focus trapped inside menu
+      if (e.shiftKey && document.activeElement === items[0]) {
+        e.preventDefault(); items[items.length - 1].focus();
+      } else if (!e.shiftKey && document.activeElement === items[items.length - 1]) {
+        e.preventDefault(); items[0].focus();
+      }
+    }
+  });
+
+  // Actions
+  elProfile?.addEventListener('click', () => {
+    // Replace with real route / modal
+    alert('Profile clicked');
+    closeMenu();
+  });
+
+  elSettings?.addEventListener('click', () => {
+    // Replace with real route / modal
+    alert('Settings clicked');
+    closeMenu();
+  });
+
+  elAuth?.addEventListener('click', () => {
+    if (isLoggedIn()) {
+      localStorage.removeItem(AUTH_KEY);
+    } else {
+      localStorage.setItem(AUTH_KEY, '1');
+    }
+    setAuthLabel();
+    closeMenu();
+  });
+
+  // Optional: open with keyboard from the button
+  btn.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault(); openMenu();
+    }
+  });
+})();
+
+// ===== Submit Button: run all test suites =====
+document.getElementById('submitBtn')?.addEventListener('click', async () => {
+  try {
+    // Check if there's a test runner function defined
+    if (typeof runTests === 'function') {
+      console.log('Submitting... running test suites');
+      await runTests(); // call your existing test runner
+    } else {
+      // Fallback: manually trigger testsuite logic if not global
+      const suites = document.querySelectorAll('.testsuite');
+      if (suites.length === 0) {
+        alert('No test suites found!');
+        return;
+      }
+      suites.forEach((suite) => {
+        try {
+          // if each suite has a run() or similar method
+          if (typeof suite.run === 'function') {
+            suite.run();
+          } else {
+            console.log('Run tests in', suite);
+            // insert any custom code here if needed
+          }
+        } catch (err) {
+          console.error('Error running suite:', err);
+        }
+      });
+    }
+
+    // Optional success feedback
+    alert('All test suites executed.');
+  } catch (error) {
+    console.error('Error during submission:', error);
+    alert('Error while running test suites.');
+  }
+});

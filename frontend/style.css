@@ -62,6 +62,14 @@ body {
 .logo { font-weight: 800; letter-spacing: .2px; }
 .tagline { color: var(--muted); font-size: .9rem; }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;              /* consistent spacing */
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
 /* ====== Layout ====== */
 .container {
   width: 100%;
@@ -163,10 +171,6 @@ body {
 }
 
 /* ====== Tests (single viewer) ====== */
-.test-nav {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
-  margin-bottom: 10px;
-}
 .test-cases { display: flex; flex-direction: column; gap: 12px; }
 .test-case {
   border: 1px solid var(--outline); border-radius: 12px; padding: 12px; background: transparent;
@@ -252,4 +256,123 @@ body {
   border: 1px dashed rgba(220,38,38,.35);
   padding: 10px 12px;
   border-radius: 12px;
+}
+
+/* ===== User Menu (top right dropdown) ===== */
+.user-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;             /* remove any inherited spacing */
+  padding: 0;
+}
+
+/* Button should look like the others */
+.user-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--outline);
+  background: var(--panel);
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+.user-menu-btn:hover {
+  background: rgba(0,0,0,0.08);
+}
+html[data-theme="dark"] .user-menu-btn:hover {
+  background: rgba(255,255,255,0.08);
+}
+.user-menu-btn:active {
+  transform: scale(0.96);
+}
+
+/* Hamburger icon */
+.menu-icon {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+.menu-icon .bar {
+  width: 16px;
+  height: 2px;
+  background-color: var(--text);
+  border-radius: 1px;
+}
+
+/* Dropdown menu */
+.user-menu .menu {
+  position: absolute;
+  top: 42px;    /* just below the button */
+  right: 0;
+  min-width: 180px;
+  background: var(--panel);
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: none;
+  z-index: 9999;
+}
+.user-menu .menu.open { display: block; }
+
+.menu-item {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+.menu-item:hover, .menu-item:focus {
+  background: rgba(0,0,0,0.06);
+  outline: none;
+}
+html[data-theme="dark"] .menu-item:hover,
+html[data-theme="dark"] .menu-item:focus {
+  background: rgba(255,255,255,0.06);
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--outline);
+  margin: 6px 4px;
+}
+
+/* Submit button */
+.btn.submit {
+  background: #3ccf4e;
+  color: #fff;
+  font-weight: 600;
+}
+.btn.submit:hover {
+  background: #34b542;
+}
+html[data-theme="dark"] .btn.submit {
+  background: #2d9f3a;
+}
+html[data-theme="dark"] .btn.submit:hover {
+  background: #248330;
+}
+
+#runBtn {
+  padding: 10px 14px;
+  font-weight: 600;
+  height: 35px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#runBtn kbd {
+  font-size: 0.8rem;
 }

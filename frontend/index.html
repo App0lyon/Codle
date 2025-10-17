@@ -24,12 +24,35 @@
         <span class="tagline">Solve. Test. Learn.</span>
       </div>
       <div class="header-actions">
+        <button class="btn submit" id="submitBtn">Submit</button>
         <button class="btn btn-primary" id="runBtn" aria-label="Run all tests (Ctrl or Cmd + Enter)">
           ▶ Run Tests
           <kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">Enter</kbd>
         </button>
         <button class="btn btn-ghost" id="resetBtn" aria-label="Reset to starter template">Reset</button>
         <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
+        <div class="user-menu">
+          <button
+            class="btn btn-ghost user-menu-btn"
+            id="userMenuBtn"
+            aria-label="Open user menu"
+            aria-haspopup="menu"
+            aria-expanded="false"
+          >
+            <span class="menu-icon" aria-hidden="true">
+              <span class="bar"></span>
+              <span class="bar"></span>
+              <span class="bar"></span>
+            </span>
+          </button>
+
+          <div class="menu" id="userMenu" role="menu" aria-labelledby="userMenuBtn">
+            <button class="menu-item" role="menuitem" id="menuProfile">Profile</button>
+            <button class="menu-item" role="menuitem" id="menuSettings">Settings</button>
+            <div class="menu-sep" role="separator"></div>
+            <button class="menu-item" role="menuitem" id="menuAuth">Login</button>
+          </div>
+        </div>
       </div>
     </div>
   </header>
@@ -101,12 +124,6 @@
           <div class="test-controls">
             <button class="btn btn-small" id="addTestBtn" aria-label="Add test case">+ Add</button>
           </div>
-        </div>
-
-        <div class="test-nav">
-          <button class="btn btn-small" id="prevTestBtn" aria-label="Previous test">← Prev</button>
-          <span id="testCounter" class="muted">Test 1 of 1</span>
-          <button class="btn btn-small" id="nextTestBtn" aria-label="Next test">Next →</button>
         </div>
 
         <div class="test-cases" id="testCases"></div>
