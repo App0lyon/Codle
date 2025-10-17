@@ -376,3 +376,40 @@ html[data-theme="dark"] .btn.submit:hover {
 #runBtn kbd {
   font-size: 0.8rem;
 }
+
+/* Markdown typography */
+.markdown-body {
+  line-height: 1.6;
+  color: var(--fg);
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+  margin: 0.8em 0 0.4em;
+  line-height: 1.25;
+}
+.markdown-body p { margin: 0.6em 0; }
+.markdown-body ul, .markdown-body ol { margin: 0.6em 1.2em; padding-left: 1.2em; }
+.markdown-body li { margin: 0.3em 0; }
+.markdown-body code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.95em;
+  background: var(--panel);
+  padding: 0.15em 0.35em;
+  border-radius: 6px;
+}
+.markdown-body pre {
+  background: var(--panel);
+  padding: 12px 14px;
+  border-radius: 10px;
+  overflow: auto;
+}
+.markdown-body pre code { background: transparent; padding: 0; }
+.markdown-body a { color: var(--primary); text-decoration: underline; }
+.markdown-body blockquote {
+  margin: 0.8em 0;
+  padding: 0.6em 1em;
+  border-left: 4px solid var(--muted);
+  background: color-mix(in oklab, var(--panel) 80%, transparent);
+  border-radius: 6px;
+}

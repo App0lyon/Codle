@@ -81,27 +81,14 @@
     }
   }
 
-  function renderMarkdownBasic(text) {
-    // Very small, safe-ish markdown: paragraphs + code blocks + inline code + lists
-    if (!text) return "";
-    let html = text
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    // code fences ```
-    html = html.replace(/```([\s\S]*?)```/g, (_, code) => `<pre><code>${code.trim()}</code></pre>`);
-    // inline code `code`
-    html = html.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
-    // headings ###
-    html = html.replace(/^###\s*(.*)$/gm, "<h3>$1</h3>");
-    html = html.replace(/^##\s*(.*)$/gm, "<h2>$1</h2>");
-    html = html.replace(/^#\s*(.*)$/gm, "<h1>$1</h1>");
-    // lists
-    html = html.replace(/^\s*-\s+(.*)$/gm, "<li>$1</li>");
-    html = html.replace(/(<li>.*<\/li>)(\s*(?!<li>))/gs, "<ul>$1</ul>");
-    // paragraphs
-    html = html.replace(/^(?!<h\d>|<ul>|<pre>|<li>)(.+)$/gm, "<p>$1</p>");
-    return html;
+  function renderMarkdown(md = "") {
+    const raw = marked.parse(md, {
+      gfm: true,
+      breaks: true,
+      headerIds: false,
+      mangle: false
+    });
+    return DOMPurify.sanitize(raw);
   }
 
   function populateProblem(problem) {
@@ -116,7 +103,7 @@
       badge.setAttribute("aria-label", `Difficulty: ${problem.difficulty}`);
     }
     if (desc) {
-      desc.innerHTML = renderMarkdownBasic(problem.description || "");
+      desc.innerHTML = renderMarkdown(problem.description || "");
     }
     if (helper) {
       helper.innerHTML = `Starter for <code>${(problem.language || "python").toUpperCase()}</code>`;
@@ -156,7 +143,7 @@
       div.className = "hint-item";
       div.dataset.hintIndex = String(i);
       div.hidden = true;
-      div.innerHTML = `<strong>Hint ${i+1}:</strong> ${h}`;
+      div.innerHTML = `<strong>Hint ${i+1}:</strong> ${renderMarkdown(h)}`;
       container.appendChild(div);
     });
     let idx = -1;
