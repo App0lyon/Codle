@@ -130,38 +130,127 @@ class GenerateResponse(BaseModel):
 
 JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+def _find_balanced_json_slice(text: str) -> str:
+    """
+    Return the shortest balanced JSON object/array slice from the text.
+    Ignores braces/brackets that appear inside JSON strings.
+    Falls back to original text if no balanced region is found.
+    """
+    start_idx = None
+    stack = []
+    in_string = False
+    escape = False
+
+    for i, ch in enumerate(text):
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        else:
+            if ch == '"':
+                in_string = True
+            elif ch in "{[":
+                if not stack:
+                    start_idx = i
+                stack.append(ch)
+            elif ch in "}]":
+                if stack:
+                    opener = stack.pop()
+                    if (opener == "{" and ch != "}") or (opener == "[" and ch != "]"):
+                        # mismatched; reset and continue searching
+                        stack.clear()
+                        start_idx = None
+                if start_idx is not None and not stack:
+                    return text[start_idx:i+1]
+
+    # If we didn’t find a clean balanced region, return the original text
+    return text
+
+
+def _escape_ctrls_inside_strings(s: str) -> str:
+    """
+    Escape raw control characters (LF, CR, TAB, etc.) that illegally appear
+    inside JSON string literals. Outside strings we leave whitespace alone.
+    """
+    out = []
+    in_string = False
+    escape = False
+    for ch in s:
+        if in_string:
+            if escape:
+                out.append(ch)
+                escape = False
+            else:
+                if ch == "\\":
+                    out.append(ch)
+                    escape = True
+                elif ch == '"':
+                    out.append(ch)
+                    in_string = False
+                elif ch == "\n":
+                    out.append("\\n")
+                elif ch == "\r":
+                    out.append("\\r")
+                elif ch == "\t":
+                    out.append("\\t")
+                elif ord(ch) < 0x20:
+                    # other control chars -> \u00XX
+                    out.append("\\u%04x" % ord(ch))
+                else:
+                    out.append(ch)
+        else:
+            out.append(ch)
+            if ch == '"':
+                in_string = True
+            elif ch == "\\":
+                # outside strings this doesn't matter; keep literal backslash
+                pass
+    return "".join(out)
+
+
+JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
 def _extract_json(text: str) -> Any:
     """
-    Be liberal in what you accept: pull out the first plausible JSON object/array,
-    normalize quotes, strip comments, and retry once without trailing commas.
+    Be liberal in what you accept:
+    - Prefer the content of a ```json fenced block, else examine whole text.
+    - Pull out the first balanced JSON object/array (brace counting, ignoring strings).
+    - Normalize quotes, strip comments, remove trailing commas.
+    - Escape illegal control characters that appear inside strings.
     """
+    # 1) Prefer fenced JSON
     match = JSON_BLOCK.search(text)
     candidate = match.group(1) if match else text
-    candidate = candidate.strip()
 
-    first_brace = candidate.find("{")
-    first_bracket = candidate.find("[")
-    first_positions = [p for p in (first_brace, first_bracket) if p != -1]
-    first = min(first_positions) if first_positions else -1
-    last = max(candidate.rfind("}"), candidate.rfind("]"))
-    if first != -1 and last != -1 and last >= first:
-        candidate = candidate[first:last+1]
+    # 2) Narrow to a balanced JSON slice
+    candidate = _find_balanced_json_slice(candidate)
 
-    cleaned = candidate
-
+    # 3) Normalize punctuation & strip obvious garbage
+    cleaned = candidate.strip()
+    cleaned = cleaned.replace("\ufeff", "")  # BOM
+    cleaned = cleaned.replace("\x00", "")    # NULs
     cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
+
+    # Remove /* ... */ and // ... comments
     cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)
     cleaned = re.sub(r"^\s*//.*$", "", cleaned, flags=re.MULTILINE)
+
+    # Remove trailing commas
     cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
 
+    # 4) Escape illegal raw control chars occurring inside strings
+    cleaned = _escape_ctrls_inside_strings(cleaned)
+
+    # 5) Try to parse; if it still fails, one more pass at trailing commas
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         attempt = re.sub(r",(\s*[}\]])", r"\1", cleaned)
-        try:
-            return json.loads(attempt)
-        except json.JSONDecodeError:
-            raise ValueError(f"Could not parse JSON from model output: {e}")
+        return json.loads(attempt)
 
 def ollama_generate(prompt: str, model: Optional[str] = None) -> str:
     model = model or OLLAMA_MODEL
@@ -217,6 +306,7 @@ PROBLEM_PROMPT = (
     "- Novel problem (not plagiarized).\n"
     "- starter_code must be valid Python 3 and compilable.\n"
     "- Avoid randomness and I/O; function-style problems only."
+    "- You must write the description in markdown."
 )
 
 HINTS_PROMPT = (
