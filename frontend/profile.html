@@ -1,78 +1,76 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Profil - Codle</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Profile – Codle</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="auth.css" />
   </head>
   <body>
-    <header class="header">
-      <div class="header-left">
-        <a href="index.html" class="logo">Codle</a>
-      </div>
+    <!-- HEADER -->
+    <header class="app-header" role="banner">
+      <div class="header-content">
+        <div class="brand">
+          <span class="logo">Codle</span>
+          <span class="tagline">Your profile</span>
+        </div>
 
-      <div class="header-right">
-        <button id="themeToggle" class="theme-toggle" aria-label="Changer le thème">🌙</button>
-        <div class="user-menu">
-          <button id="userMenuBtn" class="user-icon">👤</button>
-          <div id="userMenu" class="menu">
-            <button class="menu-item" id="menuProfile">Profil</button>
-            <button class="menu-item" id="menuSettings">Paramètres</button>
-            <button class="menu-item" id="menuAuth">Login</button>
-          </div>
+        <div class="header-actions">
+          <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
         </div>
       </div>
     </header>
 
-    <main class="profile-container">
-      <h1>Mon profil</h1>
-
-      <div class="profile-card">
-        <div class="profile-image-container">
-          <img
-            src="assets/default-avatar.png"
-            alt="Photo de profil"
-            id="profileImage"
-            class="profile-image"
-          />
-          <label for="profileUpload" class="upload-label">Changer la photo</label>
-          <input type="file" id="profileUpload" accept="image/*" hidden />
-        </div>
+    <!-- MAIN -->
+    <main class="auth-container">
+      <section class="profile-card">
+        <img
+          src="assets/default-avatar.png"
+          alt="Profile picture"
+          id="profileImage"
+          class="profile-avatar"
+        />
+        <input type="file" id="profileUpload" accept="image/*" />
 
         <div class="profile-info">
-          <h2 id="username">MonPseudo</h2>
-          <button id="changePasswordBtn" class="btn-primary">Changer le mot de passe</button>
+          <h2 id="username">MyUsername</h2>
+          <p>Member since 2025</p>
         </div>
-      </div>
 
-      <div class="stats-container">
-        <h3>Statistiques</h3>
         <div class="stats">
-          <div class="stat-card easy">
-            <p class="stat-number" id="easyCount">12</p>
-            <p class="stat-label">Faciles</p>
+          <div class="stat">
+            <span id="easyCount">12</span>
+            <label>Easy</label>
           </div>
-          <div class="stat-card medium">
-            <p class="stat-number" id="mediumCount">8</p>
-            <p class="stat-label">Moyens</p>
+          <div class="stat">
+            <span id="mediumCount">8</span>
+            <label>Medium</label>
           </div>
-          <div class="stat-card hard">
-            <p class="stat-number" id="hardCount">3</p>
-            <p class="stat-label">Difficiles</p>
+          <div class="stat">
+            <span id="hardCount">3</span>
+            <label>Hard</label>
           </div>
         </div>
-      </div>
+
+        <div class="actions">
+          <button id="changePasswordBtn" class="btn-secondary">Change password</button>
+          <button class="btn-logout">Logout</button>
+        </div>
+      </section>
     </main>
 
-    <footer class="footer">
-      <p>© 2025 Codle. Tous droits réservés.</p>
+    <!-- FOOTER -->
+    <footer class="statusbar" role="contentinfo">
+      <div>Codle © 2025</div>
+      <div class="shortcuts">
+        <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">B</kbd> toggle theme</span>
+      </div>
     </footer>
 
+    <!-- SCRIPTS -->
     <script src="script.js"></script>
     <script>
-      // Gestion du changement d'image de profil
       const uploadInput = document.getElementById('profileUpload');
       const profileImage = document.getElementById('profileImage');
 
@@ -80,17 +78,13 @@
         const file = e.target.files[0];
         if (file) {
           const reader = new FileReader();
-          reader.onload = (event) => {
-            profileImage.src = event.target.result;
-          };
+          reader.onload = (event) => (profileImage.src = event.target.result);
           reader.readAsDataURL(file);
         }
       });
 
-      // Gestion du bouton de changement de mot de passe
-      const changePasswordBtn = document.getElementById('changePasswordBtn');
-      changePasswordBtn?.addEventListener('click', () => {
-        alert('Fonction de changement de mot de passe à venir !');
+      document.getElementById('changePasswordBtn')?.addEventListener('click', () => {
+        alert('Password change feature coming soon!');
       });
     </script>
   </body>

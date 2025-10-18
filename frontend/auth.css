@@ -203,3 +203,102 @@ input[type='file'] {
     gap: 0.8rem;
   }
 }
+
+/* --- Ajustements visuels pour la page profil --- */
+.profile-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 1.2rem;
+  padding: 2.5rem;
+  background: var(--bg-secondary);
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  margin: 5rem auto 3rem auto;
+  max-width: 420px;
+}
+
+.profile-avatar {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--accent-color);
+  margin-bottom: 0.5rem;
+}
+
+#profileUpload {
+  display: none;
+}
+
+.profile-card h2 {
+  font-size: 1.2rem;
+  margin-top: 0.5rem;
+}
+
+.profile-card p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.stats {
+  display: flex;
+  justify-content: space-between;
+  width: 80%;
+  margin-top: 1.5rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.stat span {
+  font-size: 1.4rem;
+  font-weight: bold;
+}
+
+.stat label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  margin-top: 1.5rem;
+}
+
+.btn-secondary,
+.btn-logout {
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.2rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.3s;
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  background: var(--hover);
+}
+
+.btn-logout {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-logout:hover {
+  background: #c0392b;
+}
