@@ -623,13 +623,6 @@ __res = solution(*_args)
   });
 })();
 
-document.addEventListener('DOMContentLoaded', () => {
-  initThemeToggle();
-  initEditor();
-  initUIButtons();
-  loadTodaysProblem();
-});
-
 // ====== User Menu ======
 (() => {
   const btn = document.getElementById('userMenuBtn');
