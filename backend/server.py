@@ -354,6 +354,7 @@ PROBLEM_PROMPT = (
     "- starter_code must be valid Python 3 and compilable.\n"
     "- Avoid randomness and I/O; function-style problems only."
     "- You must write the description in markdown."
+    "- The function must be named solution."
 )
 
 HINTS_PROMPT = (

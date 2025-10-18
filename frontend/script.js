@@ -1,14 +1,93 @@
+/* Minimal front-end glue to fetch today's problem from the backend and hydrate the UI.
+   - Uses Europe/Paris timezone for "today"
+   - GET /problems/{date}; if 404, attempts POST /problems with difficulty from localStorage or default 'medium'
+   - Populates: title, difficulty badge, description, CodeMirror starter code, language select
+   - Optionally renders hints if returned by POST endpoint
+*/
+
 (() => {
   const $ = (sel) => document.querySelector(sel);
 
+
+// === Language Runtimes ===
+
+// --- Pyodide (Python) ---
+let __pyodidePromise = null;
+async function ensurePyodide() {
+  if (!__pyodidePromise) {
+    if (typeof loadPyodide !== "function") {
+      throw new Error("Pyodide script not loaded.");
+    }
+    __pyodidePromise = loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.1/full/" });
+  }
+  return await __pyodidePromise;
+}
+
+// --- Judge0 client (Java/C++) ---
+// Ref: https://ce.judge0.com API docs
+const JUDGE0_BASE = "https://ce.judge0.com";
+let __judgeLangIds = null;
+
+async function judge0GetLanguages() {
+  if (__judgeLangIds) return __judgeLangIds;
+  const res = await fetch(`${JUDGE0_BASE}/languages/`);
+  if (!res.ok) throw new Error("Failed to fetch Judge0 languages.");
+  const list = await res.json();
+  const byName = Object.fromEntries(list.map(x => [x.name, x.id]));
+  // Try to pick latest for each target by sorting matching names descending
+  function pickId(prefix) {
+    const candidates = Object.entries(byName).filter(([name]) => name.startsWith(prefix));
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a[0] < b[0] ? 1 : -1);
+    return candidates[0][1];
+  }
+  __judgeLangIds = {
+    java: pickId("Java ("),       // e.g. "Java (OpenJDK 13.0.1)"
+    cpp: pickId("C++ ("),         // e.g. "C++ (GCC 9.2.0)"
+    javascript: pickId("JavaScript ("),
+    python: pickId("Python (3")
+  };
+  return __judgeLangIds;
+}
+
+function b64(s) { return btoa(unescape(encodeURIComponent(s))); }
+
+async function judge0Run({ languageKey, source, stdin, expected }) {
+  const langs = await judge0GetLanguages();
+  const language_id = langs[languageKey];
+  if (!language_id) throw new Error(`Judge0 language not found for ${languageKey}`);
+  const url = `${JUDGE0_BASE}/submissions?base64_encoded=true&wait=true`;
+  const payload = {
+    language_id,
+    source_code: b64(source),
+    stdin: stdin != null ? b64(stdin) : undefined,
+    expected_output: expected != null ? b64(expected) : undefined
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(()=>"");
+    throw new Error(`Judge0 POST failed: ${res.status} ${t}`);
+  }
+  const data = await res.json();
+  return data; // includes stdout, stderr, status, etc.
+}
+
+
+  // const API_BASE = localStorage.getItem("CODLE_API") || (window.CODLE_API_BASE || "http://localhost:8000");
   // const API_BASE = "http://54.37.159.102:8000";
   const API_BASE = "http://localhost:8000";
 
+  // --- Time helpers (Europe/Paris) ---
   function parisTodayISO() {
     // Get YYYY-MM-DD for Europe/Paris
     const nowParis = new Date(
       new Date().toLocaleString("en-CA", { timeZone: "Europe/Paris" })
     );
+    // toLocaleString trick yields a string, then Date() will parse local time; better to format manually:
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Paris",
       year: "numeric",
@@ -313,9 +392,65 @@
       return;
     }
 
-    if (language !== "javascript") {
-      results.appendChild(renderResultRow("Unsupported language", false, "Only JavaScript execution is supported in-browser."));
-      setStatus("Run finished (JS only).");
+    // Language dispatch
+    if (language === "javascript") {
+      // continue with JS path below
+    } else if (language === "python") {
+      (async () => {
+        setStatus("Running in Python…");
+        const results = $("#results");
+        try {
+          const py = await ensurePyodide();
+          await py.runPythonAsync(code); // defines solution()
+          for (const [i, t] of tests.entries()) {
+            const inp = safeJSON(t.inputRaw);
+            const exp = safeJSON(t.expectedRaw);
+            const argsJSON = JSON.stringify(Array.isArray(inp) ? inp : (inp != null ? [inp] : []));
+            const pySnippet = `
+import json
+_args = json.loads(r'''${argsJSON}''')
+__res = solution(*_args)
+`;
+            await py.runPythonAsync(pySnippet);
+            const out = py.globals.get("__res");
+            const jsOut = out?.toJs ? out.toJs() : out;
+            const pass = JSON.stringify(jsOut) === JSON.stringify(exp);
+            results.appendChild(renderResultRow(`Test ${i+1}`, pass, pass ? "" : `got ${JSON.stringify(jsOut)} expected ${JSON.stringify(exp)}`));
+          }
+          setStatus("Run finished.");
+        } catch (e) {
+          results.appendChild(renderResultRow("Python runtime error", false, String(e && e.message || e)));
+          setStatus("Error.");
+        }
+      })();
+      return;
+    } else if (language === "java" || language === "cpp") {
+      (async () => {
+        setStatus("Sending to Judge0…");
+        const results = $("#results");
+        for (const [i, t] of tests.entries()) {
+          try {
+            const resp = await judge0Run({
+              languageKey: language,
+              source: code,
+              stdin: t.inputRaw ?? "",
+              expected: t.expectedRaw ?? undefined
+            });
+            const status = resp.status?.description || "Unknown";
+            const ok = status.toLowerCase().includes("accepted") || (resp.stdout && (t.expectedRaw == null || resp.stdout.trim() === String(t.expectedRaw).trim()));
+            const detailParts = [];
+            if (status && status !== "Accepted") detailParts.push(`status: ${status}`);
+            if (resp.stderr) detailParts.push(`stderr:\n${resp.stderr}`);
+            if (resp.compile_output) detailParts.push(`compile:\n${resp.compile_output}`);
+            if (resp.message) detailParts.push(`message:\n${resp.message}`);
+            if (resp.stdout) detailParts.push(`stdout:\n${resp.stdout}`);
+            results.appendChild(renderResultRow(`Test ${i+1}`, ok, detailParts.join("\n\n")));
+          } catch (err) {
+            results.appendChild(renderResultRow(`Test ${i+1}`, false, String(err)));
+          }
+        }
+        setStatus("Run finished.");
+      })();
       return;
     }
 
