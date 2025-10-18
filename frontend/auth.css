@@ -1,5 +1,6 @@
 /* ===================================================
-   Codle — Auth Pages (login, register, settings…)
+   Codle — Auth & Profile Pages
+   (login, register, settings, profile)
    =================================================== */
 
 /* Structure générale (centrage vertical) */
@@ -21,15 +22,16 @@ main.auth-container {
   background: var(--bg);
 }
 
-/* Carte de formulaire */
-.auth-card {
+/* Carte de base (login / register / profile) */
+.auth-card,
+.profile-card {
   background: var(--panel);
   border: 1px solid var(--outline);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 2rem;
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
@@ -75,4 +77,129 @@ main.auth-container {
 
 .muted a:hover {
   opacity: 0.8;
+}
+
+/* ===================================================
+   Profile Page
+   =================================================== */
+
+.profile-card {
+  max-width: 550px;
+}
+
+.profile-avatar {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  margin-bottom: 1rem;
+  object-fit: cover;
+  border: 2px solid var(--outline);
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.profile-avatar:hover {
+  transform: scale(1.05);
+}
+
+.profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.profile-info h2 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.profile-info p {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* Statistiques */
+.stats {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.stat span {
+  font-weight: bold;
+  font-size: 1.2rem;
+}
+
+.stat label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+
+/* Boutons */
+.btn {
+  cursor: pointer;
+}
+
+.btn-secondary {
+  background: var(--panel);
+  border: 1px solid var(--outline);
+  color: var(--text);
+  padding: 0.6rem 1.2rem;
+  border-radius: var(--radius);
+  font-weight: 600;
+  transition: background 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: var(--outline);
+}
+
+.btn-logout {
+  background: var(--danger, #d9534f);
+  color: white;
+  border: none;
+  padding: 0.7rem 1.2rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
+}
+
+.btn-logout:hover {
+  opacity: 0.8;
+}
+
+/* Input file (image) */
+input[type='file'] {
+  display: none;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .profile-card,
+  .auth-card {
+    margin: 1rem;
+    padding: 1.5rem;
+  }
+
+  .actions {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
 }

@@ -1,153 +1,199 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Codle</title>
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/display/placeholder.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/typescript@5.5.4/lib/typescript.js"></script>
-</head>
-<body>
-  <header class="app-header" role="banner">
-    <div class="header-content">
-      <div class="brand">
-        <span class="logo">Codle</span>
-        <span class="tagline">Solve. Test. Learn.</span>
-      </div>
-      <div class="header-actions">
-        <button class="btn submit" id="submitBtn">Submit</button>
-        <button class="btn btn-primary" id="runBtn" aria-label="Run all tests (Ctrl or Cmd + Enter)">
-          ▶ Run Tests
-          <kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">Enter</kbd>
-        </button>
-        <button class="btn btn-ghost" id="resetBtn" aria-label="Reset to starter template">Reset</button>
-        <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
-        <div class="user-menu">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Codle</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/display/placeholder.min.js"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/typescript@5.5.4/lib/typescript.js"></script>
+  </head>
+  <body>
+    <header class="app-header" role="banner">
+      <div class="header-content">
+        <div class="brand">
+          <span class="logo">Codle</span>
+          <span class="tagline">Solve. Test. Learn.</span>
+        </div>
+        <div class="header-actions">
+          <button class="btn submit" id="submitBtn">Submit</button>
           <button
-            class="btn btn-ghost user-menu-btn"
-            id="userMenuBtn"
-            aria-label="Open user menu"
-            aria-haspopup="menu"
-            aria-expanded="false"
+            class="btn btn-primary"
+            id="runBtn"
+            aria-label="Run all tests (Ctrl or Cmd + Enter)"
           >
-            <span class="menu-icon" aria-hidden="true">
-              <span class="bar"></span>
-              <span class="bar"></span>
-              <span class="bar"></span>
-            </span>
+            ▶ Run Tests
+            <kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">Enter</kbd>
           </button>
+          <button class="btn btn-ghost" id="resetBtn" aria-label="Reset to starter template">
+            Reset
+          </button>
+          <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
+          <div class="user-menu">
+            <button
+              class="btn btn-ghost user-menu-btn"
+              id="userMenuBtn"
+              aria-label="Open user menu"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              <span class="menu-icon" aria-hidden="true">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+              </span>
+            </button>
 
-          <div class="menu" id="userMenu" role="menu" aria-labelledby="userMenuBtn">
-            <button class="menu-item" role="menuitem" id="menuProfile">Profile</button>
-            <button class="menu-item" role="menuitem" id="menuSettings">Settings</button>
-            <div class="menu-sep" role="separator"></div>
-            <button class="menu-item" role="menuitem" id="menuAuth">Login</button>
+            <div class="menu" id="userMenu" role="menu" aria-labelledby="userMenuBtn">
+              <button class="menu-item" role="menuitem" id="menuProfile">Profile</button>
+              <button class="menu-item" role="menuitem" id="menuSettings">Settings</button>
+              <div class="menu-sep" role="separator"></div>
+              <button class="menu-item" role="menuitem" id="menuAuth">Login</button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <main class="container" role="main">
-    <!-- LEFT -->
-    <div class="left-panel">
-      <section class="card problem-section" aria-labelledby="problem-title">
-        <div class="section-header">
-          <h2 id="problem-title" class="section-title">Loading…</h2>
-          <span id="difficultyBadge" class="badge" aria-label="Difficulty"></span>
-        </div>
-
-        <div class="problem-content" id="problemDescription">
-          <p class="lede skeleton">Fetching today’s problem…</p>
-        </div>
-      </section>
-
-      <!-- One-by-one hints -->
-      <section class="card hints-section" aria-labelledby="hints-title">
-        <div class="section-header">
-          <h3 id="hints-title" class="section-title">Hints</h3>
-          <div class="hint-controls">
-            <button class="btn btn-small" id="hintNextBtn" aria-label="Show next hint" disabled>
-              💡 Show next <kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">/</kbd>
-            </button>
+    <main class="container" role="main">
+      <!-- LEFT -->
+      <div class="left-panel">
+        <section class="card problem-section" aria-labelledby="problem-title">
+          <div class="section-header">
+            <h2 id="problem-title" class="section-title">Loading…</h2>
+            <span id="difficultyBadge" class="badge" aria-label="Difficulty"></span>
           </div>
-        </div>
-        <div class="hints-content" id="hintsContent">
-          <p class="hint-shortcuts">Hints reveal one at a time.</p>
-        </div>
-      </section>
-    </div>
 
-    <!-- RIGHT -->
-    <div class="right-panel">
-      <section class="card editor-section" aria-labelledby="editor-title">
-        <div class="section-header">
-          <h3 id="editor-title" class="section-title">Editor</h3>
-          <div class="language-selector">
-            <label for="language">Language</label>
-            <select id="language" aria-label="Language">
-              <option value="javascript">JavaScript</option>
-              <option value="python">Python</option>
-              <option value="java">Java</option>
-              <option value="cpp">C++</option>
-            </select>
+          <div class="problem-content" id="problemDescription">
+            <p class="lede skeleton">Fetching today’s problem…</p>
           </div>
-        </div>
+        </section>
 
-        <textarea
-          class="code-editor"
-          id="codeEditor"
-          spellcheck="false"
-          aria-label="Code editor"
-          placeholder="// Write your solution here..."
-        ></textarea>
-
-        <div class="helper-row">
-          <span class="muted" id="helperText">Loading starter code…</span>
-          <span class="muted">Auto-saves.</span>
-        </div>
-      </section>
-
-      <!-- One-by-one test viewer (navigation still one-by-one; Run executes all) -->
-      <section class="card test-section" aria-labelledby="tests-title">
-        <div class="section-header">
-          <h3 id="tests-title" class="section-title">Test Cases</h3>
-          <div class="test-controls">
-            <button class="btn btn-small" id="addTestBtn" aria-label="Add test case">+ Add</button>
+        <!-- One-by-one hints -->
+        <section class="card hints-section" aria-labelledby="hints-title">
+          <div class="section-header">
+            <h3 id="hints-title" class="section-title">Hints</h3>
+            <div class="hint-controls">
+              <button class="btn btn-small" id="hintNextBtn" aria-label="Show next hint" disabled>
+                💡 Show next <kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">/</kbd>
+              </button>
+            </div>
           </div>
-        </div>
+          <div class="hints-content" id="hintsContent">
+            <p class="hint-shortcuts">Hints reveal one at a time.</p>
+          </div>
+        </section>
+      </div>
 
-        <div class="test-cases" id="testCases"></div>
-      </section>
+      <!-- RIGHT -->
+      <div class="right-panel">
+        <section class="card editor-section" aria-labelledby="editor-title">
+          <div class="section-header">
+            <h3 id="editor-title" class="section-title">Editor</h3>
+            <div class="language-selector">
+              <label for="language">Language</label>
+              <select id="language" aria-label="Language">
+                <option value="javascript">JavaScript</option>
+                <option value="python">Python</option>
+                <option value="java">Java</option>
+                <option value="cpp">C++</option>
+              </select>
+            </div>
+          </div>
 
-      <section class="card output-section" aria-labelledby="output-title">
-        <h3 id="output-title" class="section-title">Results</h3>
-        <div id="results" class="results" aria-live="polite"></div>
-      </section>
-    </div>
-  </main>
+          <textarea
+            class="code-editor"
+            id="codeEditor"
+            spellcheck="false"
+            aria-label="Code editor"
+            placeholder="// Write your solution here..."
+          ></textarea>
 
-  <footer class="statusbar" role="contentinfo">
-    <div id="status">Ready.</div>
-    <div class="shortcuts">
-      <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">Enter</kbd> run all</span>
-      <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">/</kbd> next hint</span>
-      <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">B</kbd> theme</span>
-    </div>
-  </footer>
+          <div class="helper-row">
+            <span class="muted" id="helperText">Loading starter code…</span>
+            <span class="muted">Auto-saves.</span>
+          </div>
+        </section>
 
-  <script src="script.js"></script>
-</body>
+        <!-- One-by-one test viewer (navigation still one-by-one; Run executes all) -->
+        <section class="card test-section" aria-labelledby="tests-title">
+          <div class="section-header">
+            <h3 id="tests-title" class="section-title">Test Cases</h3>
+            <div class="test-controls">
+              <button class="btn btn-small" id="addTestBtn" aria-label="Add test case">
+                + Add
+              </button>
+            </div>
+          </div>
+
+          <div class="test-cases" id="testCases"></div>
+        </section>
+
+        <section class="card output-section" aria-labelledby="output-title">
+          <h3 id="output-title" class="section-title">Results</h3>
+          <div id="results" class="results" aria-live="polite"></div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="statusbar" role="contentinfo">
+      <div id="status">Ready.</div>
+      <div class="shortcuts">
+        <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">Enter</kbd> run all</span>
+        <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">/</kbd> next hint</span>
+        <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">B</kbd> theme</span>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
 </html>
