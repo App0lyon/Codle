@@ -1,141 +1,96 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Profile – Codle</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profil - Codle</title>
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="auth.css" />
   </head>
   <body>
-    <!-- HEADER -->
-    <header class="app-header" role="banner">
-      <div class="header-content">
-        <div class="brand">
-          <span class="logo">Codle</span>
-          <span class="tagline">Your Profile</span>
-        </div>
+    <header class="header">
+      <div class="header-left">
+        <a href="index.html" class="logo">Codle</a>
+      </div>
 
-        <div class="header-actions">
-          <button class="btn btn-ghost" id="themeToggle" aria-label="Toggle theme">🌙</button>
+      <div class="header-right">
+        <button id="themeToggle" class="theme-toggle" aria-label="Changer le thème">🌙</button>
+        <div class="user-menu">
+          <button id="userMenuBtn" class="user-icon">👤</button>
+          <div id="userMenu" class="menu">
+            <button class="menu-item" id="menuProfile">Profil</button>
+            <button class="menu-item" id="menuSettings">Paramètres</button>
+            <button class="menu-item" id="menuAuth">Login</button>
+          </div>
         </div>
       </div>
     </header>
 
-    <!-- MAIN -->
-    <main class="auth-container">
-      <section class="profile-card">
-        <!-- Avatar -->
-        <label for="avatarInput">
+    <main class="profile-container">
+      <h1>Mon profil</h1>
+
+      <div class="profile-card">
+        <div class="profile-image-container">
           <img
-            id="profileAvatar"
-            src="https://api.dicebear.com/9.x/bottts-neutral/svg?seed=CodleUser"
-            alt="Profile picture"
-            class="profile-avatar"
+            src="assets/default-avatar.png"
+            alt="Photo de profil"
+            id="profileImage"
+            class="profile-image"
           />
-        </label>
-        <input type="file" id="avatarInput" accept="image/*" />
+          <label for="profileUpload" class="upload-label">Changer la photo</label>
+          <input type="file" id="profileUpload" accept="image/*" hidden />
+        </div>
 
-        <!-- Informations utilisateur -->
         <div class="profile-info">
-          <h2 id="profileName">John Doe</h2>
-          <p id="profilePseudo">@johndoe</p>
-          <p id="profileEmail">john.doe@example.com</p>
+          <h2 id="username">MonPseudo</h2>
+          <button id="changePasswordBtn" class="btn-primary">Changer le mot de passe</button>
         </div>
+      </div>
 
-        <!-- Statistiques -->
+      <div class="stats-container">
+        <h3>Statistiques</h3>
         <div class="stats">
-          <div class="stat">
-            <span id="easyCount">12</span>
-            <label>Easy</label>
+          <div class="stat-card easy">
+            <p class="stat-number" id="easyCount">12</p>
+            <p class="stat-label">Faciles</p>
           </div>
-          <div class="stat">
-            <span id="mediumCount">8</span>
-            <label>Medium</label>
+          <div class="stat-card medium">
+            <p class="stat-number" id="mediumCount">8</p>
+            <p class="stat-label">Moyens</p>
           </div>
-          <div class="stat">
-            <span id="hardCount">3</span>
-            <label>Hard</label>
+          <div class="stat-card hard">
+            <p class="stat-number" id="hardCount">3</p>
+            <p class="stat-label">Difficiles</p>
           </div>
         </div>
-
-        <!-- Actions -->
-        <div class="actions">
-          <button class="btn-secondary" id="changePasswordBtn">Change Password</button>
-          <button class="btn-logout" id="logoutBtn">Logout</button>
-        </div>
-      </section>
+      </div>
     </main>
 
-    <!-- FOOTER -->
-    <footer class="statusbar" role="contentinfo">
-      <div>Codle © 2025</div>
-      <div class="shortcuts">
-        <span><kbd class="kbd">Ctrl/⌘</kbd><kbd class="kbd">B</kbd> toggle theme</span>
-      </div>
+    <footer class="footer">
+      <p>© 2025 Codle. Tous droits réservés.</p>
     </footer>
 
-    <!-- Scripts -->
     <script src="script.js"></script>
     <script>
-      // --- Gestion du profil utilisateur ---
-      const nameEl = document.getElementById('profileName');
-      const pseudoEl = document.getElementById('profilePseudo');
-      const emailEl = document.getElementById('profileEmail');
-      const avatarEl = document.getElementById('profileAvatar');
-      const avatarInput = document.getElementById('avatarInput');
-      const logoutBtn = document.getElementById('logoutBtn');
-      const changePasswordBtn = document.getElementById('changePasswordBtn');
+      // Gestion du changement d'image de profil
+      const uploadInput = document.getElementById('profileUpload');
+      const profileImage = document.getElementById('profileImage');
 
-      // --- Simulation des données utilisateur (à remplacer par une vraie API) ---
-      const user = JSON.parse(
-        localStorage.getItem('codle-user') ||
-          `{
-      "name": "John Doe",
-      "pseudo": "johndoe",
-      "email": "john.doe@example.com",
-      "avatar": "https://api.dicebear.com/9.x/bottts-neutral/svg?seed=CodleUser",
-      "stats": { "easy": 12, "medium": 8, "hard": 3 }
-    }`
-      );
-
-      // --- Remplir les informations ---
-      nameEl.textContent = user.name;
-      pseudoEl.textContent = '@' + user.pseudo;
-      emailEl.textContent = user.email;
-      avatarEl.src = user.avatar;
-      document.getElementById('easyCount').textContent = user.stats.easy;
-      document.getElementById('mediumCount').textContent = user.stats.medium;
-      document.getElementById('hardCount').textContent = user.stats.hard;
-
-      // --- Changer l’image de profil ---
-      avatarInput.addEventListener('change', (e) => {
+      uploadInput?.addEventListener('change', (e) => {
         const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          avatarEl.src = event.target.result;
-          user.avatar = event.target.result;
-          localStorage.setItem('codle-user', JSON.stringify(user));
-        };
-        reader.readAsDataURL(file);
-      });
-
-      // --- Déconnexion ---
-      logoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('codle-user');
-        localStorage.removeItem('codle_isLoggedIn');
-        window.location.href = 'login.html';
-      });
-
-      // --- Changement de mot de passe (exemple) ---
-      changePasswordBtn.addEventListener('click', () => {
-        const newPass = prompt('Enter your new password:');
-        if (newPass && newPass.length >= 6) {
-          alert('✅ Password successfully changed!');
-        } else if (newPass) {
-          alert('❌ Password must be at least 6 characters.');
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            profileImage.src = event.target.result;
+          };
+          reader.readAsDataURL(file);
         }
+      });
+
+      // Gestion du bouton de changement de mot de passe
+      const changePasswordBtn = document.getElementById('changePasswordBtn');
+      changePasswordBtn?.addEventListener('click', () => {
+        alert('Fonction de changement de mot de passe à venir !');
       });
     </script>
   </body>
