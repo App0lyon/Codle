@@ -37,7 +37,7 @@ Base = declarative_base()
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "300"))
+OLLAMA_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "600"))
 
 DAILY_GEN_ENABLED = os.getenv("DAILY_GEN_ENABLED", "true").lower() == "true"
 DAILY_GEN_TIME = os.getenv("DAILY_GEN_TIME", "01:00")
@@ -130,6 +130,61 @@ class GenerateResponse(BaseModel):
 
 JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
+# --- replace your comment-stripping in _extract_json with this helper ---
+
+def _strip_json_comments_outside_strings(s: str) -> str:
+    """
+    Remove // line comments and /* ... */ block comments that are OUTSIDE
+    of JSON string literals. Preserves everything inside strings.
+    """
+    out = []
+    i = 0
+    n = len(s)
+    in_string = False
+    escape = False
+
+    while i < n:
+        ch = s[i]
+
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            else:
+                if ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+            i += 1
+            continue
+
+        # Not in a string
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+        elif ch == "/" and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt == "/":
+                # skip until end of line
+                i += 2
+                while i < n and s[i] not in ("\n", "\r"):
+                    i += 1
+            elif nxt == "*":
+                # skip block comment
+                i += 2
+                while i + 1 < n and not (s[i] == "*" and s[i + 1] == "/"):
+                    i += 1
+                i = min(n, i + 2)  # consume closing */
+            else:
+                out.append(ch)
+                i += 1
+        else:
+            out.append(ch)
+            i += 1
+
+    return "".join(out)
+
 def _find_balanced_json_slice(text: str) -> str:
     """
     Return the shortest balanced JSON object/array slice from the text.
@@ -215,13 +270,6 @@ def _escape_ctrls_inside_strings(s: str) -> str:
 JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
 def _extract_json(text: str) -> Any:
-    """
-    Be liberal in what you accept:
-    - Prefer the content of a ```json fenced block, else examine whole text.
-    - Pull out the first balanced JSON object/array (brace counting, ignoring strings).
-    - Normalize quotes, strip comments, remove trailing commas.
-    - Escape illegal control characters that appear inside strings.
-    """
     # 1) Prefer fenced JSON
     match = JSON_BLOCK.search(text)
     candidate = match.group(1) if match else text
@@ -235,9 +283,8 @@ def _extract_json(text: str) -> Any:
     cleaned = cleaned.replace("\x00", "")    # NULs
     cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
 
-    # Remove /* ... */ and // ... comments
-    cleaned = re.sub(r"/\*[\s\S]*?\*/", "", cleaned)
-    cleaned = re.sub(r"^\s*//.*$", "", cleaned, flags=re.MULTILINE)
+    # >>> SAFE comment stripping (outside of strings) <<<
+    cleaned = _strip_json_comments_outside_strings(cleaned)
 
     # Remove trailing commas
     cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)

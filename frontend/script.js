@@ -1,24 +1,14 @@
-/* Minimal front-end glue to fetch today's problem from the backend and hydrate the UI.
-   - Uses Europe/Paris timezone for "today"
-   - GET /problems/{date}; if 404, attempts POST /problems with difficulty from localStorage or default 'medium'
-   - Populates: title, difficulty badge, description, CodeMirror starter code, language select
-   - Optionally renders hints if returned by POST endpoint
-*/
-
 (() => {
   const $ = (sel) => document.querySelector(sel);
 
-  // const API_BASE = localStorage.getItem("CODLE_API") || (window.CODLE_API_BASE || "http://localhost:8000");
   // const API_BASE = "http://54.37.159.102:8000";
   const API_BASE = "http://localhost:8000";
 
-  // --- Time helpers (Europe/Paris) ---
   function parisTodayISO() {
     // Get YYYY-MM-DD for Europe/Paris
     const nowParis = new Date(
       new Date().toLocaleString("en-CA", { timeZone: "Europe/Paris" })
     );
-    // toLocaleString trick yields a string, then Date() will parse local time; better to format manually:
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Paris",
       year: "numeric",
