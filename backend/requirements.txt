@@ -5,3 +5,4 @@ pydantic==2.9.2
 requests==2.32.3
 apscheduler==3.10.4
 python-dotenv==1.0.1
+RapidFuzz==3.14.1

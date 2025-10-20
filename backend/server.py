@@ -2,6 +2,7 @@ import os
 import re
 import json
 import datetime as dt
+from rapidfuzz import fuzz
 from typing import List, Optional, Dict, Any
 
 import requests
@@ -130,174 +131,56 @@ class GenerateResponse(BaseModel):
 
 JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
 
-# --- replace your comment-stripping in _extract_json with this helper ---
-
-def _strip_json_comments_outside_strings(s: str) -> str:
-    """
-    Remove // line comments and /* ... */ block comments that are OUTSIDE
-    of JSON string literals. Preserves everything inside strings.
-    """
-    out = []
-    i = 0
-    n = len(s)
-    in_string = False
-    escape = False
-
-    while i < n:
-        ch = s[i]
-
-        if in_string:
-            out.append(ch)
-            if escape:
-                escape = False
-            else:
-                if ch == "\\":
-                    escape = True
-                elif ch == '"':
-                    in_string = False
-            i += 1
-            continue
-
-        # Not in a string
-        if ch == '"':
-            in_string = True
-            out.append(ch)
-            i += 1
-        elif ch == "/" and i + 1 < n:
-            nxt = s[i + 1]
-            if nxt == "/":
-                # skip until end of line
-                i += 2
-                while i < n and s[i] not in ("\n", "\r"):
-                    i += 1
-            elif nxt == "*":
-                # skip block comment
-                i += 2
-                while i + 1 < n and not (s[i] == "*" and s[i + 1] == "/"):
-                    i += 1
-                i = min(n, i + 2)  # consume closing */
-            else:
-                out.append(ch)
-                i += 1
-        else:
-            out.append(ch)
-            i += 1
-
-    return "".join(out)
-
-def _find_balanced_json_slice(text: str) -> str:
-    """
-    Return the shortest balanced JSON object/array slice from the text.
-    Ignores braces/brackets that appear inside JSON strings.
-    Falls back to original text if no balanced region is found.
-    """
-    start_idx = None
-    stack = []
-    in_string = False
-    escape = False
-
-    for i, ch in enumerate(text):
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        else:
-            if ch == '"':
-                in_string = True
-            elif ch in "{[":
-                if not stack:
-                    start_idx = i
-                stack.append(ch)
-            elif ch in "}]":
-                if stack:
-                    opener = stack.pop()
-                    if (opener == "{" and ch != "}") or (opener == "[" and ch != "]"):
-                        # mismatched; reset and continue searching
-                        stack.clear()
-                        start_idx = None
-                if start_idx is not None and not stack:
-                    return text[start_idx:i+1]
-
-    # If we didn’t find a clean balanced region, return the original text
-    return text
-
-
-def _escape_ctrls_inside_strings(s: str) -> str:
-    """
-    Escape raw control characters (LF, CR, TAB, etc.) that illegally appear
-    inside JSON string literals. Outside strings we leave whitespace alone.
-    """
-    out = []
-    in_string = False
-    escape = False
-    for ch in s:
-        if in_string:
-            if escape:
-                out.append(ch)
-                escape = False
-            else:
-                if ch == "\\":
-                    out.append(ch)
-                    escape = True
-                elif ch == '"':
-                    out.append(ch)
-                    in_string = False
-                elif ch == "\n":
-                    out.append("\\n")
-                elif ch == "\r":
-                    out.append("\\r")
-                elif ch == "\t":
-                    out.append("\\t")
-                elif ord(ch) < 0x20:
-                    # other control chars -> \u00XX
-                    out.append("\\u%04x" % ord(ch))
-                else:
-                    out.append(ch)
-        else:
-            out.append(ch)
-            if ch == '"':
-                in_string = True
-            elif ch == "\\":
-                # outside strings this doesn't matter; keep literal backslash
-                pass
-    return "".join(out)
-
-
-JSON_BLOCK = re.compile(r"```json\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+def _strip_json_comments(s: str) -> str:
+    s = re.sub(r"/\*.*?\*/", "", s, flags=re.S)
+    s = re.sub(r"(?m)^\s*//.*?$", "", s)
+    return s
 
 def _extract_json(text: str) -> Any:
-    # 1) Prefer fenced JSON
-    match = JSON_BLOCK.search(text)
-    candidate = match.group(1) if match else text
+    print(text)
+    if not isinstance(text, str) or not text.strip():
+        raise HTTPException(status_code=502, detail="Model returned an empty response")
 
-    # 2) Narrow to a balanced JSON slice
-    candidate = _find_balanced_json_slice(candidate)
+    matches = JSON_BLOCK.findall(text)
+    for m in matches:
+        candidate = m.strip()
+        candidate = _strip_json_comments(candidate)
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
 
-    # 3) Normalize punctuation & strip obvious garbage
-    cleaned = candidate.strip()
-    cleaned = cleaned.replace("\ufeff", "")  # BOM
-    cleaned = cleaned.replace("\x00", "")    # NULs
-    cleaned = cleaned.replace("“", '"').replace("”", '"').replace("’", "'")
+    ANY_FENCE = re.compile(r"```[a-zA-Z0-9_-]*\s*(.*?)\s*```", re.DOTALL)
+    for m in ANY_FENCE.findall(text):
+        candidate = m.strip()
+        candidate = _strip_json_comments(candidate)
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
 
-    # >>> SAFE comment stripping (outside of strings) <<<
-    cleaned = _strip_json_comments_outside_strings(cleaned)
-
-    # Remove trailing commas
-    cleaned = re.sub(r",(\s*[}\]])", r"\1", cleaned)
-
-    # 4) Escape illegal raw control chars occurring inside strings
-    cleaned = _escape_ctrls_inside_strings(cleaned)
-
-    # 5) Try to parse; if it still fails, one more pass at trailing commas
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        attempt = re.sub(r",(\s*[}\]])", r"\1", cleaned)
-        return json.loads(attempt)
+        return json.loads(text.strip())
+    except Exception:
+        pass
+
+    first_brace = text.find("{")
+    first_bracket = text.find("[")
+    starts = [i for i in (first_brace, first_bracket) if i != -1]
+    if starts:
+        start = min(starts)
+        for end in range(len(text) - 1, start, -1):
+            if text[end] in ("}", "]"):
+                candidate = text[start : end + 1].strip()
+                try:
+                    return json.loads(candidate)
+                except Exception:
+                    continue
+
+    preview = text.strip().replace("\n", " ")
+    if len(preview) > 200:
+        preview = preview[:200] + "..."
+    raise HTTPException(status_code=502, detail=f"Model did not return valid JSON. Preview: {preview}")
 
 def ollama_generate(prompt: str, model: Optional[str] = None) -> str:
     model = model or OLLAMA_MODEL
@@ -341,20 +224,20 @@ def pick_difficulty_for_date(date: dt.date) -> str:
 
 PROBLEM_PROMPT = (
     "You are a coding interview problem designer. Create ONE LeetCode-style problem at the requested difficulty.\n"
-    "You must provide at least 2 examples.\n"
-    "Return ONLY a JSON code block (```json ... ```), with this exact schema and no extra keys:\n"
-    "{\n"
-    '  "title": string,\n'
-    '  "description": string,  // markdown; MUST include at least two "Example" sections\n'
-    '  "starter_code": string, // valid Python 3 skeleton: def/ class signature and pass; no external libs\n'
-    '  "language": "python"\n'
-    "}\n"
+    "You must provide 2 examples.\n"
     "Constraints:\n"
     "- Novel problem (not plagiarized).\n"
     "- starter_code must be valid Python 3 and compilable.\n"
     "- Avoid randomness and I/O; function-style problems only."
     "- You must write the description in markdown."
     "- The function must be named solution."
+    "Return ONLY a JSON code block (```json ... ```). The JSON must be STRICT (no comments, no trailing commas, no extra text):\n"
+    "{\n"
+    '  "title": "…",\n'
+    '  "description": "…",\n'
+    '  "starter_code": "…",\n'
+    '  "language": "python"\n'
+    "}\n"
 )
 
 HINTS_PROMPT = (
@@ -366,8 +249,11 @@ TESTSUITE_PROMPT = (
     "Design a robust unit test suite for the problem below.\n"
     "Output ONLY JSON: an array of test cases. Each test case must be an object with keys:\n"
     '  - "input": the function input (single value or array/obj as appropriate)\n'
-    '  - "expected": the expected output\n'
-    "Cover edge cases and typical scenarios. The testsuite must be more than 10 tests."
+    '  - "expected": the expected output encoded as a JSON literal (numbers use "." for decimals, booleans are true/false, null is null)\n'
+    '  - "type": the type of the output\n'
+    "Cover edge cases and typical scenarios. The testsuite must contain more than 10 tests.\n"
+    "Don't generate the same tests twice.\n"
+    "Do not translate or localise any values in the JSON; use standard JSON syntax."
 )
 
 REVIEW_PROMPT = (
@@ -397,19 +283,37 @@ REVIEW_PROMPT = (
 # --- Agent orchestration ----------------------------------------------------
 
 class LeetAgent:
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, db: Session = Depends(get_db), model: Optional[str] = None):
+        self.db = db
         self.model = model or OLLAMA_MODEL
 
     def _ctx(self, title: str, description: str) -> str:
         return f"Problem Title: {title}\n\nDescription (markdown):\n{description}\n"
 
     def create_problem(self, difficulty: str) -> Dict[str, Any]:
-        prompt = f"Difficulty: {difficulty}.\n\n" + PROBLEM_PROMPT
-        raw = ollama_generate(prompt, model=self.model)
-        data = _extract_json(raw)
-        data.setdefault("language", "python")
-        if not all(k in data for k in ("title", "description", "starter_code")):
-            raise HTTPException(status_code=502, detail="Model did not return the required fields for problem generation")
+        all_rows = self.db.query(Problem.id, Problem.title, Problem.description).all()
+        threshold = 80
+        max_attempts = 10
+        for _ in range(max_attempts):
+            prompt = f"Difficulty: {difficulty}.\n\n" + PROBLEM_PROMPT
+            raw = ollama_generate(prompt, model=self.model)
+            data = _extract_json(raw)
+            data.setdefault("language", "python")
+            if not all(k in data for k in ("title", "description", "starter_code")):
+                continue
+
+            needle = f"{data['title']} {data['description']}"
+            max_sim = 0
+            for row in all_rows:
+                text_b = f"{row.title} {row.description}"
+                sim = fuzz.token_sort_ratio(needle, text_b)
+                if sim > max_sim:
+                    max_sim = sim
+                if max_sim >= threshold:
+                    break
+            if max_sim < threshold:
+                return data
+
         return data
 
     def create_hints(self, title: str, description: str) -> List[str]:
@@ -426,7 +330,23 @@ class LeetAgent:
         suite = _extract_json(raw)
         if not (isinstance(suite, list) and all(isinstance(t, dict) and "input" in t and "expected" in t for t in suite)):
             raise HTTPException(status_code=502, detail="Model did not return a valid testsuite array")
-        return suite
+        # Normalize the suite so that 'expected' values are encoded as JSON literals.
+        normalized = []
+        for t in suite:
+            try:
+                # Use json.dumps to serialise the expected value into a JSON literal. This
+                # ensures that numbers use '.' for decimals, booleans are true/false and
+                # lists/objects are rendered correctly. Strings will be quoted, which is
+                # acceptable because the client parses them with JSON.parse later.
+                norm_expected = json.dumps(t["expected"], ensure_ascii=False)
+            except Exception:
+                # Fallback: coerce to string and dump again.
+                norm_expected = json.dumps(str(t.get("expected")), ensure_ascii=False)
+            # Create a shallow copy to avoid mutating original objects coming from the model.
+            tc = dict(t)
+            tc["expected"] = norm_expected
+            normalized.append(tc)
+        return normalized
 
 class VerifierAgent:
     """Second agent that reviews and suggests minimal corrections."""
@@ -493,7 +413,18 @@ def _apply_suggestions(problem_data: Dict[str, Any], hints: List[str], suite: Li
     if "testsuite" in suggestions and isinstance(suggestions["testsuite"], dict):
         ts = suggestions["testsuite"]
         if ts.get("replace") and isinstance(ts.get("items"), list):
-            updated_suite = ts["items"]
+            # Normalise expected values in suggested testsuite. Use json.dumps to ensure JSON
+            # primitives are encoded canonically. See _normalize_testsuite in LeetAgent.
+            new_suite = []
+            for t in ts["items"]:
+                try:
+                    norm_expected = json.dumps(t["expected"], ensure_ascii=False)
+                except Exception:
+                    norm_expected = json.dumps(str(t.get("expected")), ensure_ascii=False)
+                tc = dict(t)
+                tc["expected"] = norm_expected
+                new_suite.append(tc)
+            updated_suite = new_suite
     return updated_problem, updated_hints, updated_suite
 
 # --- Daily generation --------------------------------------------------------
@@ -505,7 +436,7 @@ def ensure_problem_for_date(target_date: dt.date, db: Session) -> Optional[Probl
 
     check_ollama()
 
-    agent = LeetAgent()
+    agent = LeetAgent(db)
     difficulty = pick_difficulty_for_date(target_date)
 
     problem_data = agent.create_problem(difficulty)
@@ -578,7 +509,7 @@ def generate_problem(payload: GenerateRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="difficulty must be one of: medium, hard, extreme")
 
     check_ollama()
-    agent = LeetAgent()
+    agent = LeetAgent(db)
 
     problem_data = agent.create_problem(difficulty)
     hints = agent.create_hints(problem_data["title"], problem_data["description"])
